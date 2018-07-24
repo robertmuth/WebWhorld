@@ -21,7 +21,6 @@ import 'dart:html';
 import 'dart:core';
 import 'logging.dart' as log;
 
-
 class Option {
   final Element element;
   final String defaultValue;
@@ -89,10 +88,14 @@ Map<String, String> _kOptionTypeMap = {
   "S": "text",
 };
 
+// Options deals with all the options including sets of pre-sets called settings
 class Options {
+  // used to persist options in local storage
   final String _prefix;
-  Map<String, Option> _o = <String, Option>{};
-  Map<String, Map<String, String>> _settings =
+  // map of all options
+  final Map<String, Option> _o = <String, Option>{};
+  //  pre-sets
+  final Map<String, Map<String, String>> _settings =
       <String, Map<String, String>>{};
 
   Options(this._prefix);
@@ -105,10 +108,10 @@ class Options {
       [bool useFake = false]) {
     Element e = querySelector("#" + name);
     if (e == null && useFake) {
-      e = new InputElement()..type = _kOptionTypeMap[type];
+      e = InputElement()..type = _kOptionTypeMap[type];
     }
     if (e == null) throw "Missing widget for options ${name}";
-    _o[name] = new Option(AddPrefix(name), type, defaultValue, e);
+    _o[name] = Option(AddPrefix(name), type, defaultValue, e);
   }
 
   String Get(String name) {

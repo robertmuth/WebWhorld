@@ -21,15 +21,13 @@ canvas {
 }
 
 
-html, body {
+body {
 	height: 100%;
-	min-height: 100%;
 	margin: 0;
 	padding: 0;
 	border: none;
 	font-family: sans-serif;
 	width: 100%;
-   	height: 100%;
    	background-color: black
 
 }
@@ -121,6 +119,11 @@ canvas {
   ga('create', 'UA-32123907-10', 'auto');
   ga('send', 'pageview');
 
+   function disableKey(ev) {
+     ev.preventDefault();
+     console.log("swallowed event");
+     return false;
+   }
 	</script>
 </head>
 <body>
@@ -150,6 +153,10 @@ More Screen Art at: <a href='http://muth.org/Art'>http://muth.org/Art</a>
 				<td>Toggle Config</td>
 			</tr>
 			<tr>
+				<th>ESC/E</th>
+				<td>Erase/Clear Screen</td>
+			</tr>
+			<tr>
 				<th>F</th>
 				<td>Toggle Fullscreen</td>
 			</tr>
@@ -161,11 +168,13 @@ More Screen Art at: <a href='http://muth.org/Art'>http://muth.org/Art</a>
 				<th>R</th>
 				<td>Restart</td>
 			</tr>
-			<tr>
-				<th>ESC</th>
-				<td>Reset</td>
+            <tr>
+				<th>Z</th>
+				<td>Reset Zoom</td>
 			</tr>
 		</table>
+        <br />
+        Mousewheel zooms, moving mouse while pressing left button pans
 		<br />
 		<button type="button" data-cmd="C+">Config</button>
 		&nbsp;
@@ -174,28 +183,54 @@ More Screen Art at: <a href='http://muth.org/Art'>http://muth.org/Art</a>
 f
 	<div class="config" hidden>
 		<h2>Config</h2>
+		<!--
 		<form>
 			<select id="preset">
 			</select>
 			<button type="button" data-cmd="X">Activate Preset</button>
 		</form>
-		<input type="file" id="loadfile" name="loadfile" />
+		-->
+		<h3>Patches</h3>
+			Predefined
+            <select id="patch" onkeydown="disableKey(event);"></select>
+			<br>
+			Custom: <input type="file" id="loadfile" name="loadfile" />
+
 		<h3>Customize</h3>
 		<form>
 			<table>
 				<tr>
-					<td><input type="checkbox" id="hideAbout"></td>
-					<td>Hide About Screen</td>
+					<td><input type="number" id="maxRings" min=1 max=2000 value=250 step=1
+						short=1></td>
+					<td>Max Num Rings</td>
+				</tr>
+				<tr>
+					<td><input type="number" id="zoom" min=0.1 max=10 value=1.0 step=0.05></td>
+					<td>Zoom</td>
+				</tr>
+                	<tr>
+					<td><input type="number" id="zoomCenterX" min=-1000 max=1000 value=0.0 step=1></td>
+					<td>Zoom Center X</td>
+				</tr>
+                	<tr>
+					<td><input type="number" id="zoomCenterY" min=-1000 max=1000 value=0.0 step=1></td>
+					<td>Zoom Center Y</td>
 				</tr>
 				<tr>
 					<td><input type="number" id="randomSeed" value=0 step=1
 						short=1></td>
 					<td>Random Seed</td>
 				</tr>
+				<tr>
+					<td><input type="checkbox" id="hideAbout"></td>
+					<td>Hide About Screen</td>
+				</tr>
 			</table>
 		</form>
 		<p>
 			<button type="button" data-cmd="R">Restart</button>
+            <button type="button" data-cmd="Z">Zoom Reset</button>
+			<button type="button" data-cmd="E">Clear</button>
 		</p>
 		<p>
 			<button type="button" data-cmd="C-">Close</button>

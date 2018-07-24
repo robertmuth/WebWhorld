@@ -22,7 +22,7 @@ import 'dart:html';
 import 'dart:core';
 import 'dart:math';
 import 'dart:js';
-import 'dart:web_gl' as WebGL;
+import 'dart:web_gl';
 
 List<int> GetColorRGB(String colorName) {
   SpanElement e = document.createElement('span');
@@ -31,7 +31,7 @@ List<int> GetColorRGB(String colorName) {
   String color = e.getComputedStyle().color;
   e.remove();
   // color looks like: "rgb(1, 2, 3)"
-  List<String> t = color.split(new RegExp(r"[^0-9]+"));
+  List<String> t = color.split(RegExp(r"[^0-9]+"));
   return [int.parse(t[1]), int.parse(t[2]), int.parse(t[3])];
 }
 
@@ -90,7 +90,7 @@ List<String> _GetFullscreenProperty(String p) {
 }
 
 void ToggleFullscreen() {
-  var e = new JsObject.fromBrowserObject(document.documentElement);
+  var e = JsObject.fromBrowserObject(document.documentElement);
   bool inFS = false;
   for (String f in _GetFullscreenProperty("l")) {
     if (e.hasProperty(f) && e[f] != null) inFS = true;
@@ -135,10 +135,9 @@ void UpdateFrameCount(double now, Element e, String extra) {
   gLastSample = now;
 }
 
-
 bool HasWebGLSupport() {
-  CanvasElement canvas = new CanvasElement();
-  WebGL.RenderingContext2 gl = canvas.getContext("webgl2", <String, Object>{});
+  CanvasElement canvas = CanvasElement();
+  RenderingContext2 gl = canvas.getContext("webgl2", <String, Object>{});
   if (gl == null) return false;
 
   void log(String s, int param) {
@@ -155,20 +154,20 @@ bool HasWebGLSupport() {
   log("compressed texture formats: ", WebGL.COMPRESSED_TEXTURE_FORMATS);
 
   void logp(String s, int param) {
-    WebGL.ShaderPrecisionFormat fh =
+    ShaderPrecisionFormat fh =
         gl.getShaderPrecisionFormat(param, WebGL.HIGH_FLOAT);
-    WebGL.ShaderPrecisionFormat fm =
+    ShaderPrecisionFormat fm =
         gl.getShaderPrecisionFormat(param, WebGL.MEDIUM_FLOAT);
-    WebGL.ShaderPrecisionFormat fl =
+    ShaderPrecisionFormat fl =
         gl.getShaderPrecisionFormat(param, WebGL.LOW_FLOAT);
 
     window.console
         .info(s + "[fp] ${fh.precision}  ${fm.precision} ${fl.precision}");
-    WebGL.ShaderPrecisionFormat ih =
+    ShaderPrecisionFormat ih =
         gl.getShaderPrecisionFormat(param, WebGL.HIGH_INT);
-    WebGL.ShaderPrecisionFormat im =
+    ShaderPrecisionFormat im =
         gl.getShaderPrecisionFormat(param, WebGL.MEDIUM_INT);
-    WebGL.ShaderPrecisionFormat il =
+    ShaderPrecisionFormat il =
         gl.getShaderPrecisionFormat(param, WebGL.LOW_INT);
     window.console
         .info(s + "[int] ${ih.rangeMax}  ${im.rangeMax} ${il.rangeMax}");
@@ -231,7 +230,7 @@ class ProgressReporter {
 }
 
 void fullscreenWorkaround(CanvasElement canvas) {
-  var canv = new JsObject.fromBrowserObject(canvas);
+  var canv = JsObject.fromBrowserObject(canvas);
 
   if (canv.hasProperty("requestFullscreen")) {
     canv.callMethod("requestFullscreen");

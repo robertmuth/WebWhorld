@@ -32,9 +32,8 @@ String _D3(int n) {
 }
 
 String _Prefix(String kind) {
-  DateTime now = new DateTime.now();
-  return "${kind}:${_D2(now.hour)}:${_D2(now.minute)}:${_D2(now.second)}.${_D3(
-      now.millisecond)}: ";
+  DateTime now = DateTime.now();
+  return "${kind}:${_D2(now.hour)}:${_D2(now.minute)}:${_D2(now.second)}.${_D3(now.millisecond)}: ";
 }
 
 void LogInfo(String s) {

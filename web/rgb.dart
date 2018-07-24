@@ -22,7 +22,7 @@ import 'dart:core';
 import 'dart:math' as Math;
 import 'package:vector_math/vector_math.dart' as VM;
 
-final RegExp hexColor = new RegExp(r"^#[0-9a-fA-F]{6}$");
+final RegExp hexColor = RegExp(r"^#[0-9a-fA-F]{6}$");
 
 final Map<String, String> _HtmlColors = {
   "aliceblue": "f0f8ff",
@@ -220,8 +220,8 @@ class RGB {
   }
 
   factory RGB.fromNameOrRandom(Math.Random rng, String name) {
-    if (name == "random") return new RGB.fromRandom(rng);
-    return new RGB.fromName(name);
+    if (name == "random") return RGB.fromRandom(rng);
+    return RGB.fromName(name);
   }
 
   RGB.fromGray(int gray) {
@@ -264,11 +264,11 @@ class RGB {
   }
 
   VM.Vector3 GlColor() {
-    return new VM.Vector3(r / 255.0, g / 255.0, b / 255.0);
+    return VM.Vector3(r / 255.0, g / 255.0, b / 255.0);
   }
 
   VM.Vector4 GlColorWithAlpha(double alpha) {
-    return new VM.Vector4(r / 255.0, g / 255.0, b / 255.0, alpha);
+    return VM.Vector4(r / 255.0, g / 255.0, b / 255.0, alpha);
   }
 
   void scale(double s) {
@@ -285,7 +285,7 @@ class RGB {
 
   void addNoise(Math.Random rng, double noisePercent) {
     scale(1.0 - noisePercent);
-    RGB random = new RGB.fromRandom(rng);
+    RGB random = RGB.fromRandom(rng);
     random.scale(noisePercent);
     add(random);
   }
@@ -324,12 +324,12 @@ class RGB {
   }
 }
 
-final RGB kRGBblack = new RGB(0, 0, 0);
-final RGB kRGBwhite = new RGB(255, 255, 255);
-final RGB kRGBred = new RGB(255, 0, 0);
-final RGB kRGBgreen = new RGB(0, 255, 0);
-final RGB kRGBblue = new RGB(0, 0, 255);
-final RGB kRGByellow = new RGB(255, 255, 0);
-final RGB kRGBcyan = new RGB(0, 255, 255);
-final RGB kRGBmagenta = new RGB(255, 0, 255);
-final RGB kRGBtransparent = new RGB.fromGray(0)..a = 0.0;
+final RGB kRGBblack = RGB(0, 0, 0);
+final RGB kRGBwhite = RGB(255, 255, 255);
+final RGB kRGBred = RGB(255, 0, 0);
+final RGB kRGBgreen = RGB(0, 255, 0);
+final RGB kRGBblue = RGB(0, 0, 255);
+final RGB kRGByellow = RGB(255, 255, 0);
+final RGB kRGBcyan = RGB(0, 255, 255);
+final RGB kRGBmagenta = RGB(255, 0, 255);
+final RGB kRGBtransparent = RGB.fromGray(0)..a = 0.0;

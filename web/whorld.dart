@@ -1,13 +1,13 @@
 import 'dart:math' as Math;
 import 'dart:html' as HTML;
 import 'dart:core';
-import 'dart:collection';
 
 import 'webutil.dart';
 import 'rgb.dart';
 import 'logging.dart' as log;
 import 'config.dart';
 import 'parameter.dart';
+import 'patches.dart';
 
 import 'package:vector_math/vector_math.dart' as VM;
 
@@ -16,16 +16,110 @@ final HTML.CanvasElement gCanvasElement = HTML.querySelector("#area");
 final HTML.InputElement gFilesElement =
     HTML.document.getElementById('loadfile');
 
-Math.Random gRng = new Math.Random();
+Math.Random gRng = Math.Random();
 
-Parameters config = ConfigStars;
-// Parameters config = ConfigMercedes;
-// Parameters config = ConfigSaturn;
-// Parameters config = ConfigTentacles;
-// Parameters config = ConfigBullLotus2;
-// Parameters config = ConfigAnemone;
+final Parameters globRing = Parameters(<String, dynamic>{});
 
-final Parameters globalConfig = new Parameters(<String, dynamic>{});
+// Mouse collects Mouse-Events and provides a convenient API
+class Mouse {
+  static const int RIGHT = 2;
+  static const int MIDDLE = 1;
+  static const int LEFT = 0;
+
+  final Set<int> _currentlyPressedButtons = Set<int>();
+  final Set<int> _justPressedButtons = Set<int>();
+  final Set<int> _justReleasedButtons = Set<int>();
+
+  int moveDeltaX = 0;
+  int moveDeltaY = 0;
+  int wheelDeltaY = 0;
+  int currentX = 0;
+  int currentY = 0;
+
+  Mouse(dynamic elem) {
+    if (elem == null) elem = HTML.document;
+
+    elem.onMouseMove.listen((HTML.MouseEvent e) {
+      e.preventDefault();
+
+      currentX = e.offset.x;
+      currentY = e.offset.y;
+
+      moveDeltaX = e.movement.x;
+      moveDeltaY = e.movement.y;
+      //print ("MOVE ${moveDeltaX}x${moveDeltaY}");
+    });
+
+    elem.onMouseDown.listen((HTML.MouseEvent e) {
+      e.preventDefault();
+      print("BUTTON ${e.button}");
+      _currentlyPressedButtons.add(e.button);
+      _justPressedButtons.add(e.button);
+    });
+
+    elem.onMouseUp.listen((HTML.MouseEvent e) {
+      e.preventDefault();
+      _currentlyPressedButtons.remove(e.button);
+      _justReleasedButtons.add(e.button);
+    });
+
+    elem.onMouseWheel.listen((HTML.WheelEvent e) {
+      e.preventDefault();
+      wheelDeltaY = e.deltaY;
+    });
+
+    /*
+   canvas.onContextMenu.listen((HTML.MouseEvent e) {
+     e.preventDefault();
+     //e.stopPropagation();
+     //e.cancelBubble = true;
+   });
+
+     canvas.onDragStart.listen((HTML.MouseEvent event) {
+       event.preventDefault();
+     });
+     */
+    /*
+
+     eventElement.onTouchStart.listen((HTML.TouchEvent e) {
+       mouseDownX = e.touches[0].client.x;
+       mouseDownY = e.touches[0].client.y;
+     });
+
+     eventElement.onTouchMove.listen((HTML.TouchEvent e) {
+       //azimuth += e.movement.x*0.01;
+       //polar += e.movement.y*0.01;
+       HTML.Point p = e.touches[0].client;
+       azimuth += (p.x - mouseDownX) * 0.01;
+       polar += (mouseDownY - p.y) * 0.01;
+       mouseDownX = p.x;
+       mouseDownY = p.y;
+     });
+
+     setUpEventCapture(null);
+     */
+  }
+
+  bool currentlyPressedButton(int key) =>
+      _currentlyPressedButtons.contains(key);
+
+  // if you use this function make sure you call AfterFrameCleanup
+  bool justPressedButton(int key) => _justPressedButtons.contains(key);
+
+  // if you use this function make sure you call AfterFrameCleanup
+  bool justReleasedButton(int key) => _justReleasedButtons.contains(key);
+
+  // AfterFrameCleanup must be called at the end of each frame
+  void AfterFrameCleanup() {
+    moveDeltaY = 0;
+    moveDeltaX = 0;
+    wheelDeltaY = 0;
+    _justReleasedButtons.clear();
+    _justPressedButtons.clear();
+  }
+}
+
+Mouse gMouse;
 
 class Rect {
   num x1;
@@ -70,7 +164,7 @@ class Point {
   int get iy => y.floor();
 
   Point Clone() {
-    return new Point(x, y);
+    return Point(x, y);
   }
 
   void Wrap(Rect r) {
@@ -113,7 +207,6 @@ void DrawPixel(
     ..fillRect(p.ix, p.iy, 1, 1);
 }
 
-
 void DrawBackground(
     HTML.CanvasRenderingContext2D ctx, double w, double h, String color) {
   ctx
@@ -121,78 +214,95 @@ void DrawBackground(
     ..fillRect(0, 0, w, h);
 }
 
+void AddContourToPath(HTML.Path2D path, int n, List<VM.Vector2> contour) {
+  VM.Vector2 last = contour[n - 1];
+  path.moveTo(last.x, last.y);
+  for (int i = 0; i < n; i++) {
+    path.lineTo(contour[i].x, contour[i].y);
+  }
+}
+
+void AddBezierContourToPath(HTML.Path2D path, int n, List<VM.Vector2> contour) {
+  VM.Vector2 last = contour[contour.length - 2];
+  path.moveTo(last.x, last.y);
+  for (int i = 0; i < n; i += 3) {
+    VM.Vector2 c1 = contour[(i - 1 + n) % n];
+    VM.Vector2 c2 = contour[i];
+    VM.Vector2 p = contour[(i + 1) % n];
+    path.bezierCurveTo(c1.x.round(), c1.y.round(), c2.x.round(), c2.y.round(),
+        p.x.round(), p.y.round());
+  }
+}
+
 void DrawContour(HTML.CanvasRenderingContext2D ctx, String color, int lineWidth,
     int n, List<VM.Vector2> contour, bool curved) {
   assert(lineWidth > 0);
-  HTML.Path2D path = new HTML.Path2D();
-
+  HTML.Path2D path = HTML.Path2D();
   if (curved) {
-    VM.Vector2 last = contour[contour.length - 2];
-    path.moveTo(last.x, last.y);
-    for (int i = 0; i < n; i += 3) {
-      VM.Vector2 c1 = contour[(i - 1 + n) % n];
-      VM.Vector2 c2 = contour[i];
-      VM.Vector2 p = contour[(i + 1) % n];
-      path.bezierCurveTo(c1.x.round(), c1.y.round(), c2.x.round(), c2.y.round(),
-          p.x.round(), p.y.round());
-    }
+    AddBezierContourToPath(path, n, contour);
   } else {
-    VM.Vector2 last = contour[n - 1];
-    path.moveTo(last.x, last.y);
-    for (int i = 0; i < n; i++) {
-      path.lineTo(contour[i].x, contour[i].y);
-    }
+    AddContourToPath(path, n, contour);
   }
-
   ctx
     ..strokeStyle = color
     ..lineWidth = lineWidth
     ..stroke(path);
 }
 
-/*
 void Fill(HTML.CanvasRenderingContext2D ctx, String color, int nInner,
     List<VM.Vector2> inner, int nOuter, List<VM.Vector2> outer) {
-  HTML.Path2D path = new HTML.Path2D();
-
-  VM.Vector2 last;
-
-  last = inner[nInner - 1];
-  path.moveTo(last.x, last.y);
-  for (int i = 0; i < nInner; i++) {
-    path.lineTo(inner[i].x, inner[i].y);
+  HTML.Path2D path = HTML.Path2D();
+  if (nInner > 0) {
+    AddContourToPath(path, nInner, inner);
   }
+  AddContourToPath(path, nOuter, outer);
 
-  last = outer[nOuter - 1];
-  path.moveTo(last.x, last.y);
-  for (int i = 0; i < nOuter; i++) {
-    path.lineTo(outer[i].x, outer[i].y);
-  }
   ctx
     ..fillStyle = color
-    ..(path, "evenodd");
-
+    ..fill(path, "evenodd");
 }
-*/
+
+void FillWithOutline(
+    HTML.CanvasRenderingContext2D ctx,
+    String fillColor,
+    String lineColor,
+    int lineWidth,
+    int nInner,
+    List<VM.Vector2> inner,
+    int nOuter,
+    List<VM.Vector2> outer) {
+  HTML.Path2D path = HTML.Path2D();
+  if (nInner > 0) {
+    AddContourToPath(path, nInner, inner);
+  }
+  AddContourToPath(path, nOuter, outer);
+
+  ctx
+    ..fillStyle = fillColor
+    ..fill(path, "evenodd")
+    ..strokeStyle = lineColor
+    ..lineWidth = lineWidth
+    ..stroke(path);
+}
 
 void Reset() {
-  theRings = new TheRings();
+  theRings = TheRings();
   frameCount = 0.0;
-  gRng = new Math.Random();
+  gRng = Math.Random();
 }
 
 HTML.FileReader reader;
 
 void HandleFileLoad(HTML.ProgressEvent e) {
   print("Content: ${reader.result}");
-  config = new Parameters(ReadParameter(reader.result));
-  Reset();
+  AllConfigs["Custom"] = Parameters(ReadParameter(reader.result));
+  gOptions.Set(oPatch, "Custom");
 }
 
 void HandleFileSelect(HTML.Event e) {
   HTML.InputElement input = e.target;
-  print("@@@@@@@ ${input.files} ${e}");
-  reader = new HTML.FileReader();
+  print("Reading file: ${input.files} ${e}");
+  reader = HTML.FileReader();
   reader.onLoad.listen(HandleFileLoad);
   reader.readAsText(input.files[0]);
 }
@@ -205,6 +315,11 @@ void HandleCommand(String cmd, String param) {
       break;
     case "C":
       Toggle(HTML.querySelector(".config"));
+      break;
+    case "Z":
+      gOptions.Set(oZoom, "1.0");
+      gOptions.Set(oZoomCenterX, "0.0");
+      gOptions.Set(oZoomCenterY, "0.0");
       break;
     case "P":
       Toggle(HTML.querySelector(".performance"));
@@ -235,6 +350,7 @@ void HandleCommand(String cmd, String param) {
       gOptions.SetNewSettings(preset);
       break;
     case "":
+    case "E":
       Reset();
       break;
   }
@@ -248,7 +364,7 @@ class CopyState {
   VM.Vector2 GetShift() {
     double oldTheta = CopyTheta;
     CopyTheta += CopyDelta;
-    return new VM.Vector2(Math.sin(oldTheta), Math.cos(oldTheta));
+    return VM.Vector2(Math.sin(oldTheta), Math.cos(oldTheta));
   }
 }
 
@@ -257,15 +373,15 @@ class RingGeometry {
   double Rot = 0.0; // rotation for all vertices, in radians (changes over time)
   double Steps =
       0.0; // radius of even vertices, in pixels (increases over time)
-  VM.Vector2 Origin = new VM
-      .Vector2.zero(); // origin in client coords relative to window center
-  VM.Vector2 Shift = new VM.Vector2.zero(); // shear, in pixels
+  VM.Vector2 Origin =
+      VM.Vector2.zero(); // origin in client coords relative to window center
+  VM.Vector2 Shift = VM.Vector2.zero(); // shear, in pixels
 
   // Const Stuff
   double RotDelta = 0.0; // additional rotation per tick
-  VM.Vector2 ShiftDelta = new VM.Vector2.zero(); // additional shear per tick
+  VM.Vector2 ShiftDelta = VM.Vector2.zero(); // additional shear per tick
 
-  VM.Vector2 Scale = new VM.Vector2(1.0, 1.0); // anisotropic scaling
+  VM.Vector2 Scale = VM.Vector2(1.0, 1.0); // anisotropic scaling
   double StarRatio = 1.0; // ratio of odd radii to even radii
   int Sides = 4; // polygon's number of sides
   bool Reverse = false; // true if ring was born growing inward
@@ -278,8 +394,8 @@ class RingGeometry {
 
   RingGeometry();
 
-  void Set(VM.Vector2 canvasSize, Parameters config, double frame,
-      Math.Random rng, CopyState copying) {
+  void Set(double maxCoord, Parameters config, double frame, Math.Random rng,
+      CopyState copying) {
     final double newGrowth =
         config.GetOscillatingDouble(oRingGrowth, frame, rng);
     RotDelta = config.GetOscillatingDouble(oRotateSpeed, frame, rng);
@@ -288,8 +404,7 @@ class RingGeometry {
     // Variable Stuff (see Update())
     Rot = 0.0;
     if (Reverse) {
-      Steps =
-          Math.max(canvasSize.x, canvasSize.y) / 2.0 / config.GetDouble(oZoom);
+      Steps = maxCoord;
     } else {
       Steps = 0.0;
     }
@@ -299,7 +414,7 @@ class RingGeometry {
     ShiftDelta
       ..setValues(Math.sin(angle), Math.cos(angle))
       ..scale(config.GetOscillatingDouble(oSkewRadius, frame, rng));
-    Shift = new VM.Vector2.zero();
+    Shift = VM.Vector2.zero();
     if (copying != null) {
       Shift += copying.GetShift();
     }
@@ -326,15 +441,14 @@ class RingGeometry {
     return Origin;
   }
 
-  int Contour(Parameters globRing, double frame, Math.Random rng,
-      VM.Vector2 windowCenter, bool curved, List<VM.Vector2> vertices) {
-    final double stateZoom = globRing.GetDouble(oZoom); //
-    double steps = Steps * stateZoom;
-    VM.Vector2 globalScale = new VM.Vector2.zero();
+  int Contour(Parameters globRing, double frame, Math.Random rng, bool curved,
+      List<VM.Vector2> vertices) {
+    double steps = Steps;
+    VM.Vector2 globalScale = VM.Vector2.zero();
     globRing.SetScale(frame, rng, globalScale);
 
     final VM.Vector2 scale = Scale.clone()..multiply(globalScale);
-    VM.Vector2 shift = Shift * stateZoom + Origin + windowCenter;
+    VM.Vector2 shift = Shift + Origin;
     // TODO: maybe use ShiftDelta?
     shift += globRing.GetShift(frame, rng)..scale(steps);
 
@@ -356,7 +470,7 @@ class RingGeometry {
 
     final int total = curved ? numPoints * 3 : numPoints;
     while (vertices.length < total) {
-      vertices.add(new VM.Vector2.zero());
+      vertices.add(VM.Vector2.zero());
     }
 
     for (int i = 0; i < numPoints; i++) {
@@ -410,31 +524,37 @@ class RingGeometry {
   }
 }
 
-bool IsVisible(int n, List<VM.Vector2> contour, VM.Vector2 canvasSize) {
+bool IsVisible(int n, List<VM.Vector2> contour, double maxCoord) {
   for (int i = 0; i < n; i++) {
     VM.Vector2 p = contour[i];
-    if (0 <= p.x && p.x < canvasSize.x && 0 <= p.y && p.y < canvasSize.y)
-      return true;
+    if (p.x.abs() < maxCoord && p.y.abs() < maxCoord) return true;
   }
   return false;
 }
 
 class RingStyle {
-  String Color = ""; // ring's current color, in RGB
-  double LineWidth = 1.0; // pen width, in pixels, or 0 to use DC pen
-  int DrawMode = 0; // see draw mode enum
+  double Hue;
+  double Saturation;
+  double Lightness;
+  double LineWidth; // pen width, in pixels, or 0 to use DC pen
+  int DrawMode; // see draw mode enum
+  double FadeStart; // negative is invalid
 
   RingStyle();
 
   void Set(State state, Parameters config, double frame, Math.Random rng) {
-    double hue = state.Hue % 360.0;
-    double saturation =
-        100.0 * config.GetOscillatingDouble(oSaturation, frame, rng);
-    double lightness =
-        100.0 * config.GetOscillatingDouble(oLightness, frame, rng);
-    Color = "hsl(${hue}, ${saturation}%, ${lightness}%)";
+    Hue = state.Hue % 360.0;
+    Saturation = 100.0 * config.GetOscillatingDouble(oSaturation, frame, rng);
+    Lightness = 100.0 * config.GetOscillatingDouble(oLightness, frame, rng);
     LineWidth = config.GetOscillatingDouble(oLineWidth, frame, rng);
     DrawMode = config.GetInt(oDrawMode);
+    FadeStart = -1.0;
+  }
+
+  void StartFading(double frame) {
+    if (FadeStart < 0.0) {
+      FadeStart = frame;
+    }
   }
 }
 
@@ -442,67 +562,83 @@ class RingDrawable {
   bool curved = false;
   double lineWidth = 1.0;
   String color = "";
+  double alpha = 1.0;
+  int drawMode = 0;
   int nVertices = 0;
   List<VM.Vector2> vertices = [];
 }
 
+/// Ring represents an individual Ring
 class Ring {
-  final RingGeometry geometry = new RingGeometry();
-  final RingStyle style = new RingStyle();
-  final RingDrawable drawable = new RingDrawable();
+  final RingGeometry geometry = RingGeometry();
+  final RingStyle style = RingStyle();
+  // drawable is periodically updated from geometry and style
+  final RingDrawable drawable = RingDrawable();
 
   Ring();
 
-  bool UpdateDrawable(VM.Vector2 windowCenter, VM.Vector2 canvasSize,
-      double frame, Math.Random rng) {
+  bool UpdateDrawable(
+      double maxCoord, Parameters globRing, double frame, Math.Random rng) {
     if (geometry.Reverse && geometry.Steps <= 0) return false;
 
     drawable.curved = geometry.EvenCurve != 0 ||
         geometry.OddCurve != 0 ||
-        globalConfig.GetOscillatingDouble(oEvenCurve, frame, rng) != 0 ||
-        globalConfig.GetOscillatingDouble(oOddCurve, frame, rng) != 0;
+        globRing.GetOscillatingDouble(oEvenCurve, frame, rng) != 0 ||
+        globRing.GetOscillatingDouble(oOddCurve, frame, rng) != 0;
 
-    drawable.lineWidth = style.LineWidth +
-        globalConfig.GetOscillatingDouble(oLineWidth, frame, rng);
+    drawable.lineWidth =
+        style.LineWidth + globRing.GetOscillatingDouble(oLineWidth, frame, rng);
+    drawable.drawMode = style.DrawMode;
 
-    drawable.color = style.Color;
-    drawable.nVertices = geometry.Contour(globalConfig, frame, rng,
-        windowCenter, drawable.curved, drawable.vertices);
+    drawable.nVertices = geometry.Contour(
+        globRing, frame, rng, drawable.curved, drawable.vertices);
 
-    return IsVisible(drawable.nVertices, drawable.vertices, canvasSize);
+    drawable.alpha =
+        style.FadeStart < 0.0 ? 1.0 : 1.0 - (frame - style.FadeStart) * 0.02;
+    drawable.color =
+        "hsla(${style.Hue}, ${style.Saturation}%, ${style.Lightness}%, ${drawable.alpha})";
+
+    return drawable.alpha > 0.0 &&
+        IsVisible(drawable.nVertices, drawable.vertices, maxCoord);
   }
 }
 
+/// TheRings represent a set of rings
 class TheRings {
-  Queue<Ring> _rings = new Queue();
+  List<Ring> _rings = [];
 
   List<Ring> _freeList = [];
 
   TheRings();
 
-  Ring addRing(VM.Vector2 canvasSize, Parameters config, double frame,
+  Ring addRing(double maxCoord, Parameters config, double frame,
       Math.Random rng, State state, CopyState copying) {
     Ring ring;
     if (_freeList.length > 0) {
       ring = _freeList.removeLast();
     } else {
-      ring = new Ring();
+      ring = Ring();
     }
     ring.style.Set(state, config, frame, rng);
-    ring.geometry.Set(canvasSize, config, frame, rng, copying);
+    ring.geometry.Set(maxCoord, config, frame, rng, copying);
 
+    final int maxRings = gOptions.GetInt(oMaxRings);
     if (ring.geometry.Reverse) {
-      _rings.addLast(ring);
-      while (_rings.length > config.GetDouble(oRings)) {
-        _freeList.add(_rings.removeFirst());
+      _rings.add(ring);
+      if (_rings.length > maxRings) {
+        for (int i = 0; i < _rings.length - maxRings; i++) {
+          _rings[i].style.StartFading(frame);
+        }
       }
-      print("reverse: ${_rings.length}");
     } else {
-      _rings.addFirst(ring);
-      while (_rings.length > config.GetDouble(oRings)) {
-        _freeList.add(_rings.removeLast());
+      _rings.insert(0, ring);
+      if (_rings.length > maxRings) {
+        for (int i = maxRings; i < _rings.length; i++) {
+          _rings[i].style.StartFading(frame);
+        }
       }
     }
+
     return ring;
   }
 
@@ -513,11 +649,16 @@ class TheRings {
     }
   }
 
+  void removeAllRings() {
+    _freeList.addAll(_rings);
+    _rings.clear();
+  }
+
   int get length => _rings.length;
-  Queue<Ring> get rr => _rings;
+  List<Ring> get rr => _rings;
 }
 
-TheRings theRings = new TheRings();
+TheRings theRings = TheRings();
 
 double _lastTimeMs = 0.0;
 
@@ -525,31 +666,52 @@ const double SPEED = 0.3;
 double frameCount = 0.0;
 
 // TODO: set initial Hue
-final State state = new State();
+final State state = State();
 
-List<Ring> DrawRings(HTML.CanvasRenderingContext2D ctx, VM.Vector2 windowCenter,
-    VM.Vector2 canvasSize, double frame, Math.Random rng) {
+List<Ring> DrawRings(HTML.CanvasRenderingContext2D ctx, double maxCoord,
+    double frame, Math.Random rng) {
   List<Ring> toBeDeleted = [];
+  Ring last;
   // Ring last;
   for (Ring ring in theRings.rr) {
-    if (!ring.UpdateDrawable(windowCenter, canvasSize, frame, rng)) {
+    if (!ring.UpdateDrawable(maxCoord, globRing, frame, rng)) {
       toBeDeleted.add(ring);
       continue;
     }
     final RingDrawable d = ring.drawable;
-
-    if (d.lineWidth > 0.0) {
-      DrawContour(
-          ctx, d.color, d.lineWidth.ceil(), d.nVertices, d.vertices, d.curved);
+    final int drawMode = d.drawMode;
+    if (drawMode & DM_FILL != 0) {
+      if (drawMode & DM_OUTLINE != 0) {
+        if (last == null) {
+          FillWithOutline(ctx, d.color, "black", d.lineWidth.ceil(), 0, [],
+              d.nVertices, d.vertices);
+        } else {
+          FillWithOutline(
+              ctx,
+              d.color,
+              "black",
+              d.lineWidth.ceil(),
+              last.drawable.nVertices,
+              last.drawable.vertices,
+              d.nVertices,
+              d.vertices);
+        }
+      } else {
+        if (last == null) {
+          Fill(ctx, d.color, 0, [], d.nVertices, d.vertices);
+        } else {
+          Fill(ctx, d.color, last.drawable.nVertices, last.drawable.vertices,
+              d.nVertices, d.vertices);
+        }
+      }
+    } else {
+      if (d.lineWidth > 0.0) {
+        DrawContour(ctx, d.color, d.lineWidth.ceil(), d.nVertices, d.vertices,
+            d.curved);
+      }
     }
 
-    /*
-    if (last != null) {
-      Fill(ctx, d.color, last.drawable.nVertices, last.drawable.vertices,
-          d.nVertices, d.vertices);
-    }
     last = ring;
-    */
   }
 
   return toBeDeleted;
@@ -567,22 +729,25 @@ void MaybeAddRings(
 ) {}
 
 void animate(num timeMs) {
+  final Parameters config = AllConfigs[gOptions.Get(oPatch)];
   //double elapsed = timeMs - _lastTimeMs;
   _lastTimeMs = timeMs + 0.0;
 
   frameCount += 1.0;
+  final double zoom = gOptions.GetDouble(oZoom);
+  final double zoomCenterX = gOptions.GetDouble(oZoomCenterX);
+  final double zoomCenterY = gOptions.GetDouble(oZoomCenterY);
+  final VM.Vector2 canvasSize =
+      VM.Vector2(gCanvasElement.width + 0.0, gCanvasElement.height + 0.0);
 
-  VM.Vector2 canvasSize =
-      new VM.Vector2(gCanvasElement.width + 0.0, gCanvasElement.height + 0.0);
-  VM.Vector2 windowCenter = canvasSize.clone()..scale(0.5);
+  final double maxCoord = Math.max(canvasSize.x, canvasSize.y) * 0.5 * zoom;
 
   final double growth =
       SPEED * config.GetOscillatingDouble(oRingGrowth, frameCount, gRng);
-  final double ringSpaceing =
+  final double ringSpacing =
       config.GetOscillatingDouble(oRingSpacing, frameCount, gRng);
-  assert(ringSpaceing > 0);
-  assert(growth >= 0.0);
-  assert(ringSpaceing >= 0.0);
+  assert(ringSpacing > 0, "spacing needs to be > 0 is ${ringSpacing}");
+  assert(growth >= 0.0, "growth needs to be >= 0 is ${growth}");
   double unusedGrowth = growth;
   double currentFrame = frameCount -
       1.0; // approximately the time when the new ring should have been created.
@@ -595,26 +760,32 @@ void animate(num timeMs) {
     double fracTick = -state.RingOffset / growth;
     currentFrame += fracTick;
     unusedGrowth += state.RingOffset;
-    state.RingOffset = -ringSpaceing;
+    state.RingOffset = -ringSpacing;
     // we need to create one or more new rings
 
     final Ring ring =
-        theRings.addRing(canvasSize, config, currentFrame, gRng, state, null);
+        theRings.addRing(maxCoord, config, currentFrame, gRng, state, null);
     ring.geometry.Update(0.0, growth * (frameCount - currentFrame), null);
   }
-
   //
   final HTML.CanvasRenderingContext2D ctx = gCanvasElement.getContext("2d");
-  // Clear Canvas
-  DrawBackground(ctx, canvasSize.x, canvasSize.y,
-      GetBackgroundColor(config, frameCount, gRng));
-  // Draw Rings and determine invisible ones
-  List<Ring> toBeDeleted =
-      DrawRings(ctx, windowCenter, canvasSize, frameCount, gRng);
+  ctx.setTransform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
 
+  final String backgroungColor = GetBackgroundColor(config, frameCount, gRng);
+  // Clear Canvas
+  DrawBackground(ctx, canvasSize.x, canvasSize.y, backgroungColor);
+
+  // We draw the rings pretending the center of the canvas has
+  // coordinates 0,0
+  ctx.translate(
+      0.5 * canvasSize.x + zoomCenterX, 0.5 * canvasSize.y + zoomCenterY);
+  ctx.scale(zoom, zoom);
+
+  // Draw Rings and determine invisible ones
+  List<Ring> toBeDeleted = DrawRings(ctx, maxCoord, frameCount, gRng);
   state.Hue +=
       config.GetOscillatingDouble(oColorSpeed, frameCount, gRng) * SPEED;
-  VM.Vector2 PrevOrg = windowCenter;
+  VM.Vector2 PrevOrg = VM.Vector2.zero();
   for (Ring ring in theRings.rr) {
     PrevOrg = ring.geometry.Origin;
   }
@@ -633,6 +804,19 @@ void animate(num timeMs) {
   //for (Ring ring in theRings.rr) {}
 
   UpdateFrameCount(_lastTimeMs, gFps, extra.join("\n"));
+
+  if (gMouse.currentlyPressedButton(Mouse.LEFT)) {
+    if (gMouse.moveDeltaX != 0) {
+      gOptions.Set(oZoomCenterX, "${zoomCenterX + gMouse.moveDeltaX}");
+    }
+    if (gMouse.moveDeltaY != 0) {
+      gOptions.Set(oZoomCenterY, "${zoomCenterY + gMouse.moveDeltaY}");
+    }
+  }
+  if (gMouse.wheelDeltaY != 0) {
+    gOptions.Set(oZoom, "${zoom + gMouse.wheelDeltaY * 0.01}");
+  }
+  gMouse.AfterFrameCleanup();
 }
 
 void main() {
@@ -644,21 +828,25 @@ void main() {
       return;
     }
 
-    String cmd = new String.fromCharCodes([e.keyCode]);
+    String cmd = String.fromCharCodes([e.keyCode]);
     HandleCommand(cmd, "");
   });
 
+  /*
   HTML.document.body.onClick.listen((HTML.MouseEvent ev) {
     if (ev.target.runtimeType != HTML.CanvasElement) return;
     log.LogInfo("click ${ev.target.runtimeType}");
     HandleCommand("C", "");
   });
+*/
+  gMouse = Mouse(gCanvasElement);
 
   gFilesElement.onChange.listen(HandleFileSelect);
 
   void resolutionChange(HTML.Event ev) {
-    int w = gCanvasElement.clientWidth;
-    int h = gCanvasElement.clientHeight;
+    final int w = HTML.window.innerWidth;
+    final int h = HTML.window.innerHeight;
+
     gCanvasElement.width = w;
     gCanvasElement.height = h;
     print("size change $w $h");
@@ -676,6 +864,7 @@ void main() {
     HandleCommand(cmd, param);
   });
 
+  Parameters config = AllConfigs[gOptions.Get(oPatch)];
   state.Color = config.GetDouble(oHue);
   HTML.window.requestAnimationFrame(animate);
 }

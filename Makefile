@@ -25,9 +25,13 @@ upgrade:
 #--enable-checked-mode 
 #--minify
 
+web/patches.dart::
+	./combine_patches.py examples/*.whp >$@
 
 get:
 	${PUB} get
+	${PUB} global activate webdev
 
 serve:
 	webdev serve web/ 
+
