@@ -594,7 +594,7 @@ class Ring {
         globRing, frame, rng, drawable.curved, drawable.vertices);
 
     drawable.alpha =
-        style.FadeStart < 0.0 ? 1.0 : 1.0 - (frame - style.FadeStart) * 0.02;
+        style.FadeStart < 0.0 ? 1.0 : 1.0 - (frame - style.FadeStart) * 0.01;
     drawable.color =
         "hsla(${style.Hue}, ${style.Saturation}%, ${style.Lightness}%, ${drawable.alpha})";
 
@@ -669,7 +669,7 @@ double frameCount = 0.0;
 final State state = State();
 
 List<Ring> DrawRings(HTML.CanvasRenderingContext2D ctx, double maxCoord,
-    double frame, Math.Random rng) {
+    double frame, Math.Random rng, String bgColor) {
   List<Ring> toBeDeleted = [];
   Ring last;
   // Ring last;
@@ -680,16 +680,24 @@ List<Ring> DrawRings(HTML.CanvasRenderingContext2D ctx, double maxCoord,
     }
     final RingDrawable d = ring.drawable;
     final int drawMode = d.drawMode;
+    if (drawMode & DM_XRAY != 0) {
+      // https://stackoverflow.com/questions/6754496/using-html5s-globalcompositeoperation-xor-with-shape-and-text-elements-in-chr
+      // https://bugs.chromium.org/p/chromium/issues/detail?id=89881
+      // ctx.globalCompositeOperation = 'xor';
+      ctx.globalCompositeOperation = 'difference';
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+    }
     if (drawMode & DM_FILL != 0) {
       if (drawMode & DM_OUTLINE != 0) {
         if (last == null) {
-          FillWithOutline(ctx, d.color, "black", d.lineWidth.ceil(), 0, [],
+          FillWithOutline(ctx, d.color, bgColor, d.lineWidth.ceil(), 0, [],
               d.nVertices, d.vertices);
         } else {
           FillWithOutline(
               ctx,
               d.color,
-              "black",
+              bgColor,
               d.lineWidth.ceil(),
               last.drawable.nVertices,
               last.drawable.vertices,
@@ -769,11 +777,12 @@ void animate(num timeMs) {
   }
   //
   final HTML.CanvasRenderingContext2D ctx = gCanvasElement.getContext("2d");
+  ctx.globalCompositeOperation = 'source-over';
   ctx.setTransform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
 
-  final String backgroungColor = GetBackgroundColor(config, frameCount, gRng);
+  final String bgColor = GetBackgroundColor(config, frameCount, gRng);
   // Clear Canvas
-  DrawBackground(ctx, canvasSize.x, canvasSize.y, backgroungColor);
+  DrawBackground(ctx, canvasSize.x, canvasSize.y, bgColor);
 
   // We draw the rings pretending the center of the canvas has
   // coordinates 0,0
@@ -782,7 +791,7 @@ void animate(num timeMs) {
   ctx.scale(zoom, zoom);
 
   // Draw Rings and determine invisible ones
-  List<Ring> toBeDeleted = DrawRings(ctx, maxCoord, frameCount, gRng);
+  List<Ring> toBeDeleted = DrawRings(ctx, maxCoord, frameCount, gRng, bgColor);
   state.Hue +=
       config.GetOscillatingDouble(oColorSpeed, frameCount, gRng) * SPEED;
   VM.Vector2 PrevOrg = VM.Vector2.zero();
@@ -814,7 +823,10 @@ void animate(num timeMs) {
     }
   }
   if (gMouse.wheelDeltaY != 0) {
-    gOptions.Set(oZoom, "${zoom + gMouse.wheelDeltaY * 0.01}");
+    double delta = gMouse.wheelDeltaY * 0.01 * zoom;
+    if (zoom + delta > 0.0) {
+      gOptions.Set(oZoom, "${zoom + delta}");
+    }
   }
   gMouse.AfterFrameCleanup();
 }
